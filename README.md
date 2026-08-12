@@ -1,8 +1,3 @@
-## Arquitetura do Sistema
-
-Abaixo encontra-se o Diagrama de Classes UML do nosso projeto, modelado para integrar os dados do GBIF
-
-```mermaid
 classDiagram
     direction TB
     
@@ -75,6 +70,7 @@ classDiagram
     }
 
     class Species {
+        <<abstract>>
         -id : int
         -scientificName : String
         -status : ConservationStatus
@@ -83,7 +79,6 @@ classDiagram
         +getStatus() ConservationStatus
         +describeHabitat()* String
     }
-    <<abstract>> Species
 
     class SpeciesFactory {
         +createFromAPI(id: int, name: String, taxonomicClass: String)$ Species
