@@ -1,3 +1,5 @@
+package model;
+
 public class Reptile extends Species {
     private String scaleType;
 

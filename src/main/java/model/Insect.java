@@ -1,3 +1,5 @@
+package model;
+
 public class Insect extends Species {
     private String wingType;
 

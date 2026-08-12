@@ -1,3 +1,5 @@
+package model;
+
 public abstract class Species {
     private int id;
     private String scientificName;

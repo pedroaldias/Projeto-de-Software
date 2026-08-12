@@ -1,3 +1,5 @@
+package model;
+
 public class Plant extends Species {
     private String biome;
     private String floweringSeason;

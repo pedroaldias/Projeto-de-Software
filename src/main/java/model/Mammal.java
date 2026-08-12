@@ -1,3 +1,5 @@
+package model;
+
 public class Mammal extends Species {
     private String behaviorPattern;
 

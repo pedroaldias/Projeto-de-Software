@@ -1,3 +1,5 @@
+package model;
+
 public class Crustacean extends Species {
     private String depthZone;
 

@@ -1,3 +1,5 @@
+package model;
+
 public class Amphibian extends Species {
     private String waterBodyType;
 

@@ -1,3 +1,5 @@
+package model;
+
 public class Bird extends Species {
     private String migrationRoute;
 
