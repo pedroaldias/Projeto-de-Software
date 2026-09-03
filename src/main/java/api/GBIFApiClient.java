@@ -9,6 +9,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -63,7 +65,7 @@ public class GBIFApiClient {
 
     private String fetchConservationStatus(int speciesId) {
         String url = "https://api.gbif.org/v1/species/" + speciesId + "/iucnRedListCategory";
-        
+
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -79,13 +81,29 @@ public class GBIFApiClient {
         } catch (Exception e) {
             // Ignorado, apenas retorna null
         }
-        
+
         return null;
     }
 
-    public Species searchByName(String query) {
+    // Busca restrita a nome popular/vernacular (qField=VERNACULAR).
+    public List<SearchResult> searchByVernacular(String query, int offset, int limit) {
+        return search(query, "VERNACULAR", offset, limit);
+    }
+
+    // Busca geral (nome científico ou texto livre, sem restringir campo).
+    public List<SearchResult> searchByScientific(String query, int offset, int limit) {
+        return search(query, null, offset, limit);
+    }
+
+    private List<SearchResult> search(String query, String qField, int offset, int limit) {
         String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
-        String url = "https://api.gbif.org/v1/species/search?q=" + encodedQuery + "&limit=1";
+        String url = "https://api.gbif.org/v1/species/search?q=" + encodedQuery
+                + "&limit=" + limit + "&offset=" + offset;
+        if (qField != null) {
+            url += "&qField=" + qField;
+        }
+
+        List<SearchResult> parsed = new ArrayList<>();
 
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -98,61 +116,85 @@ public class GBIFApiClient {
 
             if (response.statusCode() != 200) {
                 System.out.println("Erro na requisição à API. Código HTTP: " + response.statusCode());
-                return null;
+                return parsed;
             }
 
-            String jsonBody = response.body();
+            for (String raw : extractResultObjects(response.body())) {
+                String keyStr = extractJsonNumericField(raw, "nubKey");
+                if (keyStr == null) {
+                    keyStr = extractJsonNumericField(raw, "key");
+                }
+                if (keyStr == null) {
+                    continue;
+                }
 
-            String firstResult = extractFirstResultObject(jsonBody);
-            if (firstResult == null) {
-                System.out.println("Nenhum resultado encontrado para: \"" + query + "\".");
-                return null;
+                String name = extractJsonField(raw, "canonicalName");
+                if (name == null || name.isEmpty()) {
+                    name = extractJsonField(raw, "scientificName");
+                }
+                if (name == null) {
+                    continue;
+                }
+
+                String taxonomicClass = extractJsonField(raw, "class");
+                List<String> vernacularNames = extractVernacularNames(raw);
+
+                parsed.add(new SearchResult(Integer.parseInt(keyStr), name, taxonomicClass, vernacularNames));
             }
-
-            // CORREÇÃO: Busca primeiro pela nubKey (ID canônico). Se não achar, cai para a key genérica.
-            String keyStr = extractJsonNumericField(firstResult, "nubKey");
-            if (keyStr == null) {
-                keyStr = extractJsonNumericField(firstResult, "key");
-            }
-            
-            if (keyStr == null) {
-                System.out.println("Não foi possível identificar o ID (taxonKey) do resultado encontrado.");
-                return null;
-            }
-
-            int speciesId = Integer.parseInt(keyStr);
-
-            return fetchSpecies(speciesId);
 
         } catch (Exception e) {
             System.err.println("Erro ao comunicar com a API do GBIF: " + e.getMessage());
-            return null;
         }
+
+        return parsed;
     }
 
-    private String extractFirstResultObject(String json) {
+    private List<String> extractVernacularNames(String resultObject) {
+        List<String> names = new ArrayList<>();
+        Pattern pattern = Pattern.compile("\"vernacularName\":\\s*\"([^\"]+)\"");
+        Matcher matcher = pattern.matcher(resultObject);
+        while (matcher.find()) {
+            names.add(matcher.group(1));
+        }
+        return names;
+    }
+
+    // Extrai cada objeto {...} de dentro do array "results": [...] do JSON,
+    // já que não estamos usando uma lib de JSON de verdade.
+    private List<String> extractResultObjects(String json) {
+        List<String> objects = new ArrayList<>();
+
         int resultsIdx = json.indexOf("\"results\"");
-        if (resultsIdx == -1) return null;
+        if (resultsIdx == -1) return objects;
 
         int arrayStart = json.indexOf('[', resultsIdx);
-        if (arrayStart == -1) return null;
+        if (arrayStart == -1) return objects;
 
-        int objStart = json.indexOf('{', arrayStart);
-        if (objStart == -1) return null;
+        int i = arrayStart + 1;
+        while (i < json.length()) {
+            while (i < json.length() && json.charAt(i) != '{' && json.charAt(i) != ']') {
+                i++;
+            }
+            if (i >= json.length() || json.charAt(i) == ']') break;
 
-        int depth = 0;
-        for (int i = objStart; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (c == '{') {
-                depth++;
-            } else if (c == '}') {
-                depth--;
-                if (depth == 0) {
-                    return json.substring(objStart, i + 1);
+            int objStart = i;
+            int depth = 0;
+            for (; i < json.length(); i++) {
+                char c = json.charAt(i);
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        i++;
+                        break;
+                    }
                 }
             }
+            objects.add(json.substring(objStart, i));
         }
-        return null;
+
+        return objects;
     }
 
     private String extractJsonField(String json, String fieldName) {
