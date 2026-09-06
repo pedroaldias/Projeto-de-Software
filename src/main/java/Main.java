@@ -1,4 +1,5 @@
 import api.GBIFApiClient;
+import model.Occurrence;
 import model.SearchResult;
 import model.Species;
 
@@ -23,7 +24,10 @@ public class Main {
                     consultaGeral(scanner, client);
                     break;
                 case "2":
-                    System.out.println("\n[Listagem de ocorrências ainda será implementada]\n");
+                    Species especie = resolverEspecie(scanner, client);
+                    if (especie != null) {
+                        listarOcorrencias(especie, client, scanner);
+                    }
                     break;
                 case "0":
                     running = false;
@@ -47,103 +51,123 @@ public class Main {
         System.out.print("Escolha uma opção: ");
     }
 
-    private static void consultaGeral(Scanner scanner, GBIFApiClient client) {
-        System.out.print("\nDigite o nome (comum ou científico) da espécie: ");
-        String termo = scanner.nextLine().trim();
+    private static Species resolverEspecie(Scanner scanner, GBIFApiClient client) {
+    System.out.print("\nDigite o nome (comum ou científico) da espécie: ");
+    String termo = scanner.nextLine().trim();
 
-        if (termo.isEmpty()) {
-            System.out.println("Termo de busca não pode ser vazio.\n");
-            return;
+    if (termo.isEmpty()) {
+        System.out.println("Termo de busca não pode ser vazio.\n");
+        return null;
+    }
+
+    boolean usandoNomePopular = true;
+    int offset = 0;
+    List<SearchResult> pagina = client.searchByVernacular(termo, offset, PAGINA);
+
+    if (pagina.isEmpty()) {
+        usandoNomePopular = false;
+        pagina = client.searchByScientific(termo, offset, PAGINA);
+    }
+
+    if (pagina.isEmpty()) {
+        System.out.println("Nenhum resultado encontrado para \"" + termo + "\".\n");
+        return null;
+    }
+
+    while (true) {
+        exibirResultados(pagina, offset);
+        System.out.print("\nDigite o número do resultado, [N] próxima página, "
+                + "[P] página anterior ou [0] cancelar: ");
+        String escolha = scanner.nextLine().trim();
+
+        // ... (mesmo bloco de N / P / 0 que já existe hoje em consultaGeral) ...
+
+        int indice;
+        try {
+            indice = Integer.parseInt(escolha);
+        } catch (NumberFormatException e) {
+            System.out.println("Opção inválida.\n");
+            continue;
         }
 
-        System.out.println("Buscando \"" + termo + "\" na base do GBIF...");
-
-        // 1) Tenta primeiro por nome popular (vernacular). Se não achar nada,
-        //    cai para a busca geral (nome científico ou texto livre).
-        boolean usandoNomePopular = true;
-        int offset = 0;
-        List<SearchResult> pagina = client.searchByVernacular(termo, offset, PAGINA);
-
-        if (pagina.isEmpty()) {
-            usandoNomePopular = false;
-            pagina = client.searchByScientific(termo, offset, PAGINA);
+        if (indice < 1 || indice > pagina.size()) {
+            System.out.println("Opção inválida.\n");
+            continue;
         }
 
-        if (pagina.isEmpty()) {
-            System.out.println("Nenhum resultado encontrado para \"" + termo + "\".\n");
-            return;
-        }
+        SearchResult selecionado = pagina.get(indice - 1);
+        return client.fetchSpecies(selecionado.getKey());
+    }
+}
 
-        while (true) {
-            exibirResultados(pagina, offset);
-            System.out.print("\nDigite o número do resultado, [N] próxima página, "
-                    + "[P] página anterior ou [0] cancelar: ");
-            String escolha = scanner.nextLine().trim();
+private static void listarOcorrencias(Species especie, GBIFApiClient client, Scanner scanner) {
+    List<String> brutos = client.fetchRawOccurrencesByScientificName(especie.getScientificName(), 200);
+    GBIFApiClient.ResultadoLote resultado = client.importarOcorrencias(brutos, especie);
+    List<Occurrence> ocorrencias = resultado.ocorrencias;
 
-            if (escolha.equalsIgnoreCase("N")) {
-                int novoOffset = offset + PAGINA;
-                List<SearchResult> proxima = usandoNomePopular
-                        ? client.searchByVernacular(termo, novoOffset, PAGINA)
-                        : client.searchByScientific(termo, novoOffset, PAGINA);
+    if (ocorrencias.isEmpty()) {
+        System.out.println("\nNenhuma ocorrência válida encontrada para \"" + especie.getScientificName() + "\".");
+        System.out.println(resultado.descartados + " registros ignorados por dados inválidos.\n");
+        return;
+    }
 
-                if (proxima.isEmpty()) {
-                    System.out.println("Não há mais resultados.\n");
-                } else {
-                    offset = novoOffset;
-                    pagina = proxima;
-                }
-                continue;
-            }
+    int offset = 0;
+    while (true) {
+        exibirOcorrencias(ocorrencias, offset);
 
-            if (escolha.equalsIgnoreCase("P")) {
-                if (offset == 0) {
-                    System.out.println("Você já está na primeira página.\n");
-                    continue;
-                }
-                int novoOffset = Math.max(0, offset - PAGINA);
-                List<SearchResult> anterior = usandoNomePopular
-                        ? client.searchByVernacular(termo, novoOffset, PAGINA)
-                        : client.searchByScientific(termo, novoOffset, PAGINA);
-                offset = novoOffset;
-                pagina = anterior;
-                continue;
-            }
+        boolean temProxima = offset + PAGINA < ocorrencias.size();
+        boolean temAnterior = offset > 0;
 
-            if (escolha.equals("0")) {
-                System.out.println("Busca cancelada.\n");
-                return;
-            }
+        System.out.print("\n" + (temProxima ? "[N] próxima página, " : "")
+                + (temAnterior ? "[P] página anterior, " : "") + "[0] voltar: ");
+        String escolha = scanner.nextLine().trim();
 
-            int indice;
-            try {
-                indice = Integer.parseInt(escolha);
-            } catch (NumberFormatException e) {
-                System.out.println("Opção inválida.\n");
-                continue;
-            }
-
-            if (indice < 1 || indice > pagina.size()) {
-                System.out.println("Opção inválida.\n");
-                continue;
-            }
-
-            SearchResult selecionado = pagina.get(indice - 1);
-            Species especie = client.fetchSpecies(selecionado.getKey());
-
-            if (especie == null) {
-                System.out.println("Não foi possível carregar os detalhes dessa espécie.\n");
-                return;
-            }
-
-            System.out.println("\n--- Resultado ---");
-            System.out.println("ID (taxonKey): " + especie.getId());
-            System.out.println("Nome científico: " + especie.getScientificName());
-            System.out.println("Categoria: " + especie.getClass().getSimpleName());
-            System.out.println("Detalhes: " + especie.describeHabitat());
-            System.out.println();
-            return;
+        if (escolha.equalsIgnoreCase("N") && temProxima) {
+            offset += PAGINA;
+        } else if (escolha.equalsIgnoreCase("P") && temAnterior) {
+            offset = Math.max(0, offset - PAGINA);
+        } else if (escolha.equals("0")) {
+            break;
+        } else {
+            System.out.println("Opção inválida.");
         }
     }
+
+    System.out.println("\n" + ocorrencias.size() + " ocorrências processadas, "
+            + resultado.descartados + " registros ignorados por dados inválidos.\n");
+}
+
+private static void exibirOcorrencias(List<Occurrence> ocorrencias, int offset) {
+    int fim = Math.min(offset + PAGINA, ocorrencias.size());
+    System.out.println("\n--- Ocorrências (" + (offset + 1) + " a " + fim + " de " + ocorrencias.size() + ") ---");
+    for (int i = offset; i < fim; i++) {
+        Occurrence o = ocorrencias.get(i);
+        System.out.printf("%2d. %s @ (%.4f, %.4f)%n", i + 1, o.getDate(), o.getLatitude(), o.getLongitude());
+    }
+}
+
+private static void consultaGeral(Scanner scanner, GBIFApiClient client) {
+    Species especie = resolverEspecie(scanner, client);
+
+    if (especie == null) {
+        return;
+    }
+
+    System.out.println("\n--- Resultado ---");
+    System.out.println("ID (taxonKey): " + especie.getId());
+    System.out.println("Nome científico: " + especie.getScientificName());
+    System.out.println("Categoria: " + especie.getClass().getSimpleName());
+    System.out.println("Detalhes: " + especie.describeHabitat());
+
+    System.out.print("\nDeseja ver as ocorrências desta espécie? (S/N): ");
+    String verOcorrencias = scanner.nextLine().trim();
+
+    if (verOcorrencias.equalsIgnoreCase("S")) {
+        listarOcorrencias(especie, client, scanner);
+    } else {
+        System.out.println();
+    }
+}
 
     private static void exibirResultados(List<SearchResult> pagina, int offset) {
         System.out.println("\n--- Resultados (" + (offset + 1) + " a " + (offset + pagina.size()) + ") ---");

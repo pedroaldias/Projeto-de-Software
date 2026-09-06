@@ -13,6 +13,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Date;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 
 public class GBIFApiClient {
 
@@ -85,6 +88,33 @@ public class GBIFApiClient {
         return null;
     }
 
+    // Busca ocorrências reais de uma espécie pelo nome científico.
+public List<String> fetchRawOccurrencesByScientificName(String scientificName, int limit) {
+    String encoded = URLEncoder.encode(scientificName, StandardCharsets.UTF_8);
+    String url = "https://api.gbif.org/v1/occurrence/search?scientificName=" + encoded
+            + "&limit=" + limit;
+
+    try {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .GET()
+                .header("Accept", "application/json")
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            System.out.println("Erro na requisição de ocorrências. Código HTTP: " + response.statusCode());
+            return new ArrayList<>();
+        }
+
+        return extractResultObjects(response.body()); // reaproveitado de verdade, sem duplicar
+    } catch (Exception e) {
+        System.err.println("Erro ao comunicar com a API do GBIF: " + e.getMessage());
+        return new ArrayList<>();
+    }
+}
+
     // Busca restrita a nome popular/vernacular (qField=VERNACULAR).
     public List<SearchResult> searchByVernacular(String query, int offset, int limit) {
         return search(query, "VERNACULAR", offset, limit);
@@ -148,6 +178,61 @@ public class GBIFApiClient {
 
         return parsed;
     }
+
+private Date parseData(String texto) {
+    if (texto == null || texto.isEmpty()) {
+        return null;
+    }
+
+    // eventDate às vezes vem como intervalo ("2023-05-12/2023-05-13"); usamos a data inicial.
+    String primeira = texto.split("/")[0].trim();
+
+    try {
+        if (primeira.length() > 10) {
+            // Tem componente de hora junto (ex.: 2023-05-12T14:30:00)
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+            return sdf.parse(primeira.substring(0, Math.min(19, primeira.length())));
+        } else {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+            return sdf.parse(primeira);
+        }
+    } catch (ParseException e) {
+        throw new IllegalArgumentException("Data de ocorrência em formato inválido: " + texto);
+    }
+}
+
+public static class ResultadoLote {
+    public final List<Occurrence> ocorrencias = new ArrayList<>();
+    public int descartados = 0;
+}
+
+public ResultadoLote importarOcorrencias(List<String> jsonsBrutos, Species especie) {
+    ResultadoLote resultado = new ResultadoLote();
+
+    for (String raw : jsonsBrutos) {
+        try {
+            String latStr = extractJsonNumericField(raw, "decimalLatitude");
+            String lonStr = extractJsonNumericField(raw, "decimalLongitude");
+            String dataStr = extractJsonField(raw, "eventDate");
+
+            if (latStr == null || lonStr == null) {
+                throw new IllegalArgumentException("Ocorrência sem coordenadas.");
+            }
+
+            double lat = Double.parseDouble(latStr);
+            double lon = Double.parseDouble(lonStr);
+            Date data = (dataStr != null) ? parseData(dataStr) : null;
+
+            Occurrence occ = new Occurrence(data, lat, lon, especie);
+            resultado.ocorrencias.add(occ);
+
+        } catch (IllegalArgumentException e) {
+            resultado.descartados++;
+        }
+    }
+
+    return resultado;
+}
 
     private List<String> extractVernacularNames(String resultObject) {
         List<String> names = new ArrayList<>();
