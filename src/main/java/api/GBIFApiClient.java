@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.Date;
+import java.text.Normalizer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 
@@ -180,6 +181,19 @@ public class GBIFApiClient {
                 int taxonKey = Integer.parseInt(keyStr);
                 List<String> vernacularNames = fetchVernacularNamesByLanguage(taxonKey, IDIOMA_PADRAO);
 
+                // O endpoint do GBIF, mesmo restrito a qField=VERNACULAR, às vezes
+                // devolve correspondências "fuzzy" sem relação real com o termo
+                // buscado (ex.: buscar "panthera leo" por VERNACULAR pode retornar
+                // resultados cujos nomes populares em português não têm nada a ver
+                // com o termo). Isso fazia a busca por nome científico nunca cair
+                // no fallback de searchByScientific, pois a página "vernacular"
+                // nunca vinha vazia. Aqui descartamos esses falsos positivos,
+                // exigindo que o termo buscado realmente apareça em algum nome
+                // popular retornado.
+                if ("VERNACULAR".equals(qField) && !correspondeAoTermoBuscado(vernacularNames, query)) {
+                    continue;
+                }
+
                 parsed.add(new SearchResult(taxonKey, name, taxonomicClass, vernacularNames));
             }
 
@@ -268,6 +282,45 @@ public class GBIFApiClient {
             }
         }
         // Chegou aqui, significa que a string é composta só por '?' (e/ou espaços).
+        return false;
+    }
+
+    // Remove acentuação e normaliza para minúsculas/tokens simples, para permitir
+    // comparação de texto tolerante a maiúsculas/acentos entre o termo buscado
+    // pelo usuário e os nomes populares retornados pela API.
+    private String normalizar(String texto) {
+        if (texto == null) {
+            return "";
+        }
+        String semAcentos = Normalizer.normalize(texto, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        return semAcentos.toLowerCase().replaceAll("[^a-z0-9]+", " ").trim();
+    }
+
+    // Verifica se o termo buscado pelo usuário de fato aparece em algum dos
+    // nomes populares retornados (todas as palavras do termo precisam constar
+    // em um mesmo nome popular). Usado para filtrar falsos positivos de busca
+    // por VERNACULAR — ver comentário em search().
+    private boolean correspondeAoTermoBuscado(List<String> nomesPopulares, String termoBuscado) {
+        String termoNormalizado = normalizar(termoBuscado);
+        if (termoNormalizado.isEmpty()) {
+            return true;
+        }
+        String[] palavras = termoNormalizado.split(" ");
+
+        for (String nomePopular : nomesPopulares) {
+            String nomeNormalizado = normalizar(nomePopular);
+            boolean todasAsPalavrasEncontradas = true;
+            for (String palavra : palavras) {
+                if (!nomeNormalizado.contains(palavra)) {
+                    todasAsPalavrasEncontradas = false;
+                    break;
+                }
+            }
+            if (todasAsPalavrasEncontradas) {
+                return true;
+            }
+        }
         return false;
     }
 

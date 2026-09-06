@@ -5,12 +5,23 @@ import model.Species;
 
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
 public class Main {
 
     private static final int PAGINA = 20;
+
+    // Quantas espécies (ex.: subespécies) casando com o termo buscado são
+    // consideradas ao listar ocorrências. Não há navegação/paginação aqui
+    // porque o usuário não escolhe uma espécie específica: todas as
+    // correspondências entram no cálculo.
+    private static final int LIMITE_ESPECIES_PARA_OCORRENCIAS = 30;
+
+    // Quantas ocorrências brutas são buscadas por espécie individual antes de
+    // serem validadas/filtradas.
+    private static final int LIMITE_OCORRENCIAS_POR_ESPECIE = 200;
 
     public static void main(String[] args) {
         configurarConsoleUtf8();
@@ -35,10 +46,7 @@ public class Main {
                     consultaGeral(scanner, client);
                     break;
                 case "2":
-                    Species especie = resolverEspecie(scanner, client);
-                    if (especie != null) {
-                        listarOcorrencias(especie, client, scanner);
-                    }
+                    listarOcorrenciasPorNome(scanner, client);
                     break;
                 case "0":
                     running = false;
@@ -192,14 +200,71 @@ public class Main {
         }
     }
 
+    // Usado após a consulta geral (opção 1), quando o usuário já escolheu uma
+    // espécie específica e pede para ver as ocorrências dela.
     private static void listarOcorrencias(Species especie, GBIFApiClient client, Scanner scanner) {
-        List<String> brutos = client.fetchRawOccurrencesByScientificName(especie.getScientificName(), 200);
+        List<String> brutos = client.fetchRawOccurrencesByScientificName(especie.getScientificName(), LIMITE_OCORRENCIAS_POR_ESPECIE);
         GBIFApiClient.ResultadoLote resultado = client.importarOcorrencias(brutos, especie);
-        List<Occurrence> ocorrencias = resultado.ocorrencias;
 
+        exibirOcorrenciasPaginadas(resultado.ocorrencias, resultado.descartados,
+                "\"" + especie.getScientificName() + "\"", scanner);
+    }
+
+    // Opção "2. Listar ocorrências": o usuário digita um nome (comum ou
+    // científico), e TODAS as ocorrências encontradas para esse termo são
+    // listadas diretamente — não há passo de "escolha um resultado". Como um
+    // termo pode casar com mais de uma espécie (ex.: subespécies de
+    // Panthera leo), buscamos ocorrências de cada espécie encontrada e
+    // juntamos tudo em uma única lista.
+    private static void listarOcorrenciasPorNome(Scanner scanner, GBIFApiClient client) {
+        System.out.print("\nDigite o nome (comum ou científico) da espécie: ");
+        String termo = scanner.nextLine().trim();
+
+        if (termo.isEmpty()) {
+            System.out.println("Termo de busca não pode ser vazio.\n");
+            return;
+        }
+
+        System.out.println("Buscando ocorrências de \"" + termo + "\" na base do GBIF...");
+
+        // Mesma lógica de fallback da consulta geral: tenta nome popular
+        // primeiro, cai para nome científico se não achar nada.
+        List<SearchResult> correspondencias = client.searchByVernacular(termo, 0, LIMITE_ESPECIES_PARA_OCORRENCIAS);
+        if (correspondencias.isEmpty()) {
+            correspondencias = client.searchByScientific(termo, 0, LIMITE_ESPECIES_PARA_OCORRENCIAS);
+        }
+
+        if (correspondencias.isEmpty()) {
+            System.out.println("Nenhuma espécie encontrada para \"" + termo + "\".\n");
+            return;
+        }
+
+        List<Occurrence> todasOcorrencias = new ArrayList<>();
+        int totalDescartados = 0;
+
+        for (SearchResult correspondencia : correspondencias) {
+            Species especie = client.fetchSpecies(correspondencia.getKey());
+            if (especie == null) {
+                continue;
+            }
+
+            List<String> brutos = client.fetchRawOccurrencesByScientificName(
+                    especie.getScientificName(), LIMITE_OCORRENCIAS_POR_ESPECIE);
+            GBIFApiClient.ResultadoLote resultado = client.importarOcorrencias(brutos, especie);
+
+            todasOcorrencias.addAll(resultado.ocorrencias);
+            totalDescartados += resultado.descartados;
+        }
+
+        exibirOcorrenciasPaginadas(todasOcorrencias, totalDescartados, "\"" + termo + "\"", scanner);
+    }
+
+    // Paginação/exibição compartilhada pelos dois fluxos acima.
+    private static void exibirOcorrenciasPaginadas(List<Occurrence> ocorrencias, int descartados,
+                                                     String rotuloBusca, Scanner scanner) {
         if (ocorrencias.isEmpty()) {
-            System.out.println("\nNenhuma ocorrência válida encontrada para \"" + especie.getScientificName() + "\".");
-            System.out.println(resultado.descartados + " registros ignorados por dados inválidos.\n");
+            System.out.println("\nNenhuma ocorrência válida encontrada para " + rotuloBusca + ".");
+            System.out.println(descartados + " registros ignorados por dados inválidos.\n");
             return;
         }
 
@@ -226,7 +291,7 @@ public class Main {
         }
 
         System.out.println("\n" + ocorrencias.size() + " ocorrências processadas, "
-                + resultado.descartados + " registros ignorados por dados inválidos.\n");
+                + descartados + " registros ignorados por dados inválidos.\n");
     }
 
     private static void exibirOcorrencias(List<Occurrence> ocorrencias, int offset) {
@@ -234,7 +299,8 @@ public class Main {
         System.out.println("\n--- Ocorrências (" + (offset + 1) + " a " + fim + " de " + ocorrencias.size() + ") ---");
         for (int i = offset; i < fim; i++) {
             Occurrence o = ocorrencias.get(i);
-            System.out.printf("%2d. %s @ (%.4f, %.4f)%n", i + 1, o.getDate(), o.getLatitude(), o.getLongitude());
+            System.out.printf("%2d. %-25s | %s @ (%.4f, %.4f)%n", i + 1,
+                    o.getSpeciesRef().getScientificName(), o.getDate(), o.getLatitude(), o.getLongitude());
         }
     }
 
