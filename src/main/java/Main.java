@@ -2,6 +2,8 @@ import api.GBIFApiClient;
 import model.SearchResult;
 import model.Species;
 
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Scanner;
 
@@ -10,7 +12,16 @@ public class Main {
     private static final int PAGINA = 20;
 
     public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
+        configurarConsoleUtf8();
+
+        // Força saída e leitura padrão em UTF-8, independente da code page
+        // nativa do console (no Windows, o cmd.exe costuma usar uma code page
+        // antiga que não representa acentos/caracteres especiais, fazendo o
+        // Java imprimir "?" mesmo quando o dado em memória está correto).
+        System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
+        System.setErr(new PrintStream(System.err, true, StandardCharsets.UTF_8));
+
+        Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
         GBIFApiClient client = new GBIFApiClient();
         boolean running = true;
 
@@ -35,6 +46,48 @@ public class Main {
         }
 
         scanner.close();
+    }
+
+    // No Windows, o console (cmd.exe/PowerShell) costuma abrir usando uma code
+    // page antiga (ex.: 850), que não representa acentos e caracteres especiais
+    // corretamente, mesmo que o Java esteja emitindo os bytes certos em UTF-8.
+    // Para o usuário não precisar configurar nada manualmente antes de usar o
+    // programa, ajustamos a codificação do console automaticamente aqui, via
+    // um subprocesso que herda o console atual (por isso a mudança afeta a
+    // janela inteira, e não só esse subprocesso). Em sistemas que já usam
+    // UTF-8 nativamente (Linux/macOS), isso simplesmente não é executado.
+    private static void configurarConsoleUtf8() {
+        String sistemaOperacional = System.getProperty("os.name", "").toLowerCase();
+        if (!sistemaOperacional.contains("win")) {
+            return;
+        }
+
+        try {
+            // Testado e confirmado: ajustar a codificação de saída do console
+            // via PowerShell resolve o problema de forma mais confiável do que
+            // o comando "chcp 65001" isolado no ambiente do usuário. Também
+            // precisamos ajustar a ENTRADA (InputEncoding) — sem isso, o texto
+            // digitado pelo usuário com acentos chega corrompido no Java, mesmo
+            // com a saída já correta.
+            new ProcessBuilder("powershell", "-NoProfile", "-Command",
+                    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+                            + "[Console]::InputEncoding = [System.Text.Encoding]::UTF8")
+                    .inheritIO()
+                    .start()
+                    .waitFor();
+        } catch (Exception e) {
+            // Se o PowerShell não estiver disponível por algum motivo, tenta o
+            // chcp como alternativa antes de desistir.
+            try {
+                new ProcessBuilder("cmd.exe", "/c", "chcp 65001>nul")
+                        .inheritIO()
+                        .start()
+                        .waitFor();
+            } catch (Exception ignored) {
+                // Se nada funcionar, seguimos mesmo assim — o pior caso é
+                // voltar a ter mojibake, mas o programa continua funcionando.
+            }
+        }
     }
 
     private static void exibirMenu() {

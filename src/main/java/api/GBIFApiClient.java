@@ -10,11 +10,21 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class GBIFApiClient {
+
+    // Código do idioma (ISO 639-2/T) usado para filtrar os nomes populares
+    // retornados pela API do GBIF. "por" = português.
+    private static final String IDIOMA_PADRAO = "por";
+
+    // Quantidade de nomes populares buscados por espécie antes do filtro por
+    // idioma (ver comentário em fetchVernacularNamesByLanguage).
+    private static final int LIMITE_NOMES_POPULARES = 300;
 
     private final HttpClient client;
 
@@ -32,7 +42,7 @@ public class GBIFApiClient {
                     .header("Accept", "application/json")
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
             if (response.statusCode() != 200) {
                 System.out.println("Erro na requisição à API. Código HTTP: " + response.statusCode());
@@ -73,7 +83,7 @@ public class GBIFApiClient {
                     .header("Accept", "application/json")
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
             if (response.statusCode() == 200) {
                 return extractJsonField(response.body(), "category");
@@ -112,7 +122,7 @@ public class GBIFApiClient {
                     .header("Accept", "application/json")
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
             if (response.statusCode() != 200) {
                 System.out.println("Erro na requisição à API. Código HTTP: " + response.statusCode());
@@ -137,26 +147,98 @@ public class GBIFApiClient {
                 }
 
                 String taxonomicClass = extractJsonField(raw, "class");
-                List<String> vernacularNames = extractVernacularNames(raw);
+                int taxonKey = Integer.parseInt(keyStr);
+                List<String> vernacularNames = fetchVernacularNamesByLanguage(taxonKey, IDIOMA_PADRAO);
 
-                parsed.add(new SearchResult(Integer.parseInt(keyStr), name, taxonomicClass, vernacularNames));
+                parsed.add(new SearchResult(taxonKey, name, taxonomicClass, vernacularNames));
             }
 
         } catch (Exception e) {
             System.err.println("Erro ao comunicar com a API do GBIF: " + e.getMessage());
         }
 
-        return parsed;
+        return deduplicateByScientificName(parsed);
     }
 
-    private List<String> extractVernacularNames(String resultObject) {
-        List<String> names = new ArrayList<>();
-        Pattern pattern = Pattern.compile("\"vernacularName\":\\s*\"([^\"]+)\"");
-        Matcher matcher = pattern.matcher(resultObject);
-        while (matcher.find()) {
-            names.add(matcher.group(1));
+    // Remove nomes científicos repetidos dentro da mesma página de resultados.
+    // Quando há mais de um resultado com o mesmo nome científico, mantém apenas
+    // aquele que possui o maior número de nomes populares associados.
+    private List<SearchResult> deduplicateByScientificName(List<SearchResult> results) {
+        Map<String, SearchResult> melhoresPorNome = new LinkedHashMap<>();
+
+        for (SearchResult atual : results) {
+            String nomeCientifico = atual.getScientificName();
+            SearchResult existente = melhoresPorNome.get(nomeCientifico);
+
+            if (existente == null
+                    || atual.getVernacularNames().size() > existente.getVernacularNames().size()) {
+                melhoresPorNome.put(nomeCientifico, atual);
+            }
         }
+
+        return new ArrayList<>(melhoresPorNome.values());
+    }
+
+    // Busca os nomes populares de uma espécie e filtra por idioma no lado do
+    // cliente. O parâmetro "language" da API do GBIF nesse endpoint não filtra
+    // de fato os resultados (comportamento confirmado empiricamente — a API
+    // devolve a mesma lista completa independente do valor enviado), então
+    // buscamos um limite alto de nomes e filtramos aqui pelo campo "language"
+    // de cada item, comparando com o código ISO 639-2 esperado (ex.: "por").
+    private List<String> fetchVernacularNamesByLanguage(int taxonKey, String language) {
+        List<String> names = new ArrayList<>();
+        String url = "https://api.gbif.org/v1/species/" + taxonKey
+                + "/vernacularNames?limit=" + LIMITE_NOMES_POPULARES;
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .GET()
+                    .header("Accept", "application/json")
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+
+            if (response.statusCode() == 200) {
+                for (String raw : extractResultObjects(response.body())) {
+                    String idiomaDoItem = extractJsonField(raw, "language");
+                    if (idiomaDoItem == null || !idiomaDoItem.equals(language)) {
+                        continue;
+                    }
+
+                    String nome = extractJsonField(raw, "vernacularName");
+                    if (isNomePopularValido(nome) && !names.contains(nome)) {
+                        names.add(nome);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignorado — em caso de falha, retorna lista vazia para essa espécie
+            // sem interromper a listagem dos demais resultados.
+        }
+
         return names;
+    }
+
+    // Alguns nomes populares vêm da API do GBIF corrompidos por problema de
+    // encoding/charset, aparecendo como sequências de "?" (ex.: "????????").
+    // Esse método descarta esses casos para que não poluam a listagem nem
+    // interfiram na escolha do resultado com mais nomes populares.
+    private boolean isNomePopularValido(String nome) {
+        if (nome == null) {
+            return false;
+        }
+        String semEspacos = nome.trim();
+        if (semEspacos.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < semEspacos.length(); i++) {
+            if (semEspacos.charAt(i) != '?') {
+                return true;
+            }
+        }
+        // Chegou aqui, significa que a string é composta só por '?' (e/ou espaços).
+        return false;
     }
 
     // Extrai cada objeto {...} de dentro do array "results": [...] do JSON,
