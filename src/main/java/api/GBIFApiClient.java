@@ -20,7 +20,7 @@ import java.text.Normalizer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 
-public class GBIFApiClient {
+public class GBIFApiClient implements SpeciesDataSource {
 
     // Código do idioma (ISO 639-2/T) usado para filtrar os nomes populares
     // retornados pela API do GBIF. "por" = português.
@@ -36,6 +36,7 @@ public class GBIFApiClient {
         this.client = HttpClient.newHttpClient();
     }
 
+    @Override
     public Species fetchSpecies(int speciesId) {
         String url = "https://api.gbif.org/v1/species/" + speciesId;
 
@@ -100,6 +101,7 @@ public class GBIFApiClient {
     }
 
     // Busca ocorrências reais de uma espécie pelo nome científico.
+    @Override
     public List<String> fetchRawOccurrencesByScientificName(String scientificName, int limit) {
         String encoded = URLEncoder.encode(scientificName, StandardCharsets.UTF_8);
         String url = "https://api.gbif.org/v1/occurrence/search?scientificName=" + encoded
@@ -126,16 +128,26 @@ public class GBIFApiClient {
         }
     }
 
+    // ---- RF7 [A]: busca sob demanda, paginação resolvida aqui dentro ----
+ 
+    // Cada sessão guarda sua própria função de busca de página (offset ->
+    // resultados), então nada fora desta classe precisa saber como montar a
+    // URL/query do GBIF. A sessão só busca uma página nova quando realmente
+    // precisa (nextPage()); páginas já vistas ficam em cache nela mesma.
     // Busca restrita a nome popular/vernacular (qField=VERNACULAR).
-    public List<SearchResult> searchByVernacular(String query, int offset, int limit) {
-        return search(query, "VERNACULAR", offset, limit);
+    @Override
+    public SearchSession searchByVernacular(String termo, int pageSize) {
+        return new GBIFSearchSession(offset -> search(termo, "VERNACULAR", offset, pageSize), pageSize);
     }
 
     // Busca geral (nome científico ou texto livre, sem restringir campo).
-    public List<SearchResult> searchByScientific(String query, int offset, int limit) {
-        return search(query, null, offset, limit);
+    @Override 
+    public SearchSession searchByScientific(String termo, int pageSize) {
+        return new GBIFSearchSession(offset -> search(termo, null, offset, pageSize), pageSize);
     }
 
+    // Método interno (mantém offset/limit) usado pelas sessões acima.
+    // Continua privado: nada fora desta classe deve gerenciar paginação da API.
     private List<SearchResult> search(String query, String qField, int offset, int limit) {
         String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
         String url = "https://api.gbif.org/v1/species/search?q=" + encodedQuery
@@ -346,13 +358,9 @@ public class GBIFApiClient {
         }
     }
 
-    public static class ResultadoLote {
-        public final List<Occurrence> ocorrencias = new ArrayList<>();
-        public int descartados = 0;
-    }
-
-    public ResultadoLote importarOcorrencias(List<String> jsonsBrutos, Species especie) {
-        ResultadoLote resultado = new ResultadoLote();
+    @Override
+    public ImportResult importarOcorrencias(List<String> jsonsBrutos, Species especie) {
+        ImportResult resultado = new ImportResult();
 
         for (String raw : jsonsBrutos) {
             try {

@@ -1,4 +1,7 @@
 import api.GBIFApiClient;
+import api.ImportResult;
+import api.SearchSession;
+import api.SpeciesDataSource;
 import model.Occurrence;
 import model.SearchResult;
 import model.Species;
@@ -13,11 +16,13 @@ public class Main {
 
     private static final int PAGINA = 20;
 
-    // Quantas espécies (ex.: subespécies) casando com o termo buscado são
-    // consideradas ao listar ocorrências. Não há navegação/paginação aqui
-    // porque o usuário não escolhe uma espécie específica: todas as
-    // correspondências entram no cálculo.
-    private static final int LIMITE_ESPECIES_PARA_OCORRENCIAS = 30;
+    // por que
+    // Tamanho de página usado quando precisamos buscar TODAS as correspondências
+    // de uma vez (fluxo de ocorrências, que agrega dados de todas as espécies
+    // encontradas). Maior que PAGINA porque, nesse caso, sabemos de antemão que
+    // vamos consumir a lista inteira — não faz sentido usar páginas pequenas
+    // pensadas para exibição em tela.
+    private static final int PAGINA_LOTE = 50;
 
     // Quantas ocorrências brutas são buscadas por espécie individual antes de
     // serem validadas/filtradas.
@@ -34,7 +39,8 @@ public class Main {
         System.setErr(new PrintStream(System.err, true, StandardCharsets.UTF_8));
 
         Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
-        GBIFApiClient client = new GBIFApiClient();
+        // RF7 [IF]: Main só conhece a interface, nunca a implementação concreta.
+        SpeciesDataSource client = new GBIFApiClient();
         boolean running = true;
 
         while (running) {
@@ -112,10 +118,13 @@ public class Main {
         System.out.print("Escolha uma opção: ");
     }
 
-    // Busca uma espécie por nome (popular ou científico), com paginação real:
-    // [N]/[P] refazem a consulta à API com um novo offset em vez de só
-    // re-exibir a mesma página.
-    private static Species resolverEspecie(Scanner scanner, GBIFApiClient client) {
+    // Busca uma espécie por nome (popular ou científico).
+    //
+    // RF7 [A] / Corrigir: Main não gerencia mais offset/limit da API — quem
+    // faz isso é a SearchSession. [N] só busca uma página nova na API se o
+    // usuário realmente pedir para avançar além do que já foi visto; [P]
+    // nunca busca nada novo, só volta no cache da própria sessão.
+    private static Species resolverEspecie(Scanner scanner, SpeciesDataSource client) {
         System.out.print("\nDigite o nome (comum ou científico) da espécie: ");
         String termo = scanner.nextLine().trim();
 
@@ -128,52 +137,34 @@ public class Main {
 
         // 1) Tenta primeiro por nome popular (vernacular). Se não achar nada,
         //    cai para a busca geral (nome científico ou texto livre).
-        boolean usandoNomePopular = true;
-        int offset = 0;
-        List<SearchResult> pagina = client.searchByVernacular(termo, offset, PAGINA);
-
-        if (pagina.isEmpty()) {
-            usandoNomePopular = false;
-            pagina = client.searchByScientific(termo, offset, PAGINA);
+        SearchSession session = client.searchByVernacular(termo, PAGINA);
+        if(!session.hasResults()) {
+            session = client.searchByScientific(termo, PAGINA);
         }
 
-        if (pagina.isEmpty()) {
+        if(!session.hasResults()) {
             System.out.println("Nenhum resultado encontrado para \"" + termo + "\".\n");
             return null;
         }
 
         while (true) {
-            exibirResultados(pagina, offset);
+            List<SearchResult> pagina = session.currentPage();
+            exibirResultados(pagina, session.pageIndex() * PAGINA);
             System.out.print("\nDigite o número do resultado, [N] próxima página, "
                     + "[P] página anterior ou [0] cancelar: ");
             String escolha = scanner.nextLine().trim();
 
             if (escolha.equalsIgnoreCase("N")) {
-                int novoOffset = offset + PAGINA;
-                List<SearchResult> proxima = usandoNomePopular
-                        ? client.searchByVernacular(termo, novoOffset, PAGINA)
-                        : client.searchByScientific(termo, novoOffset, PAGINA);
-
-                if (proxima.isEmpty()) {
+                if (!session.nextPage()) {
                     System.out.println("Não há mais resultados.\n");
-                } else {
-                    offset = novoOffset;
-                    pagina = proxima;
                 }
                 continue;
             }
 
             if (escolha.equalsIgnoreCase("P")) {
-                if (offset == 0) {
+                if (!session.previousPage()) {
                     System.out.println("Você já está na primeira página.\n");
-                    continue;
                 }
-                int novoOffset = Math.max(0, offset - PAGINA);
-                List<SearchResult> anterior = usandoNomePopular
-                        ? client.searchByVernacular(termo, novoOffset, PAGINA)
-                        : client.searchByScientific(termo, novoOffset, PAGINA);
-                offset = novoOffset;
-                pagina = anterior;
                 continue;
             }
 
@@ -200,14 +191,32 @@ public class Main {
         }
     }
 
+    // Usado quando precisamos de TODAS as correspondências de uma busca, não
+    // só da página que está sendo exibida (ex.: fluxo de ocorrências, que
+    // agrega dados de todas as espécies encontradas). Percorre a sessão até
+    // o fim, reaproveitando a mesma lógica de paginação sob demanda.
+    private static List<SearchResult> collectAllPages(SearchSession session) {
+        List<SearchResult> todos = new ArrayList<>();
+
+        if(!session.hasResults()) {
+            return todos;
+        }
+
+        todos.addAll(session.currentPage());
+        while (session.nextPage()) {
+            todos.addAll(session.currentPage());
+        }
+
+        return todos;
+    }
+
     // Usado após a consulta geral (opção 1), quando o usuário já escolheu uma
     // espécie específica e pede para ver as ocorrências dela.
-    private static void listarOcorrencias(Species especie, GBIFApiClient client, Scanner scanner) {
+    private static void listarOcorrencias(Species especie, SpeciesDataSource client, Scanner scanner) {
         List<String> brutos = client.fetchRawOccurrencesByScientificName(especie.getScientificName(), LIMITE_OCORRENCIAS_POR_ESPECIE);
-        GBIFApiClient.ResultadoLote resultado = client.importarOcorrencias(brutos, especie);
+        ImportResult resultado = client.importarOcorrencias(brutos, especie);
 
-        exibirOcorrenciasPaginadas(resultado.ocorrencias, resultado.descartados,
-                "\"" + especie.getScientificName() + "\"", scanner);
+        exibirOcorrenciasPaginadas(resultado.ocorrencias, resultado.descartados, "\"" + especie.getScientificName() + "\"", scanner);
     }
 
     // Opção "2. Listar ocorrências": o usuário digita um nome (comum ou
@@ -216,7 +225,7 @@ public class Main {
     // termo pode casar com mais de uma espécie (ex.: subespécies de
     // Panthera leo), buscamos ocorrências de cada espécie encontrada e
     // juntamos tudo em uma única lista.
-    private static void listarOcorrenciasPorNome(Scanner scanner, GBIFApiClient client) {
+    private static void listarOcorrenciasPorNome(Scanner scanner, SpeciesDataSource client) {
         System.out.print("\nDigite o nome (comum ou científico) da espécie: ");
         String termo = scanner.nextLine().trim();
 
@@ -228,10 +237,12 @@ public class Main {
         System.out.println("Buscando ocorrências de \"" + termo + "\" na base do GBIF...");
 
         // Mesma lógica de fallback da consulta geral: tenta nome popular
-        // primeiro, cai para nome científico se não achar nada.
-        List<SearchResult> correspondencias = client.searchByVernacular(termo, 0, LIMITE_ESPECIES_PARA_OCORRENCIAS);
+        // primeiro, cai para nome científico se não achar nada. Aqui
+        // precisamos de TODAS as correspondências (para agregar ocorrências
+        // de cada uma), então percorremos a sessão até o fim.
+        List<SearchResult> correspondencias = collectAllPages(client.searchByVernacular(termo, PAGINA_LOTE));
         if (correspondencias.isEmpty()) {
-            correspondencias = client.searchByScientific(termo, 0, LIMITE_ESPECIES_PARA_OCORRENCIAS);
+            correspondencias = collectAllPages(client.searchByScientific(termo, PAGINA_LOTE));
         }
 
         if (correspondencias.isEmpty()) {
@@ -250,7 +261,7 @@ public class Main {
 
             List<String> brutos = client.fetchRawOccurrencesByScientificName(
                     especie.getScientificName(), LIMITE_OCORRENCIAS_POR_ESPECIE);
-            GBIFApiClient.ResultadoLote resultado = client.importarOcorrencias(brutos, especie);
+            ImportResult resultado = client.importarOcorrencias(brutos, especie);
 
             todasOcorrencias.addAll(resultado.ocorrencias);
             totalDescartados += resultado.descartados;
@@ -304,7 +315,7 @@ public class Main {
         }
     }
 
-    private static void consultaGeral(Scanner scanner, GBIFApiClient client) {
+    private static void consultaGeral(Scanner scanner, SpeciesDataSource client) {
         Species especie = resolverEspecie(scanner, client);
 
         if (especie == null) {
