@@ -5,6 +5,7 @@ public class Bird extends Species {
 
     public Bird(int id, String name, ConservationStatus status, String migrationRoute) {
         super(id, name, status);
+        
         this.migrationRoute = migrationRoute;
     }
 

@@ -43,4 +43,34 @@ public enum ConservationStatus {
                 return NOT_EVALUATED;
         }
     }
+
+    /**
+     * Nome da classificação em português, para exibição ao usuário. O nome
+     * interno do enum (em inglês) continua sendo usado como identificador
+     * estável em qualquer lugar do código que precise comparar/armazenar o
+     * status — esta tradução é só para a camada de apresentação.
+     */
+    public String emPortugues() {
+        switch (this) {
+            case EXTINCT:
+                return "Extinta";
+            case EXTINCT_IN_THE_WILD:
+                return "Extinta na Natureza";
+            case CRITICALLY_ENDANGERED:
+                return "Criticamente em Perigo";
+            case ENDANGERED:
+                return "Em Perigo";
+            case VULNERABLE:
+                return "Vulnerável";
+            case NEAR_THREATENED:
+                return "Quase Ameaçada";
+            case LEAST_CONCERN:
+                return "Pouco Preocupante";
+            case DATA_DEFICIENT:
+                return "Dados Insuficientes";
+            case NOT_EVALUATED:
+            default:
+                return "Não Avaliada";
+        }
+    }
 }

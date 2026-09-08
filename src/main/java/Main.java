@@ -2,6 +2,8 @@ import api.GBIFApiClient;
 import api.ImportResult;
 import api.SearchSession;
 import api.SpeciesDataSource;
+import model.ConservationReport;
+import model.ConservationStatus;
 import model.Occurrence;
 import model.SearchResult;
 import model.Species;
@@ -9,7 +11,9 @@ import model.Species;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 
 public class Main {
@@ -53,6 +57,9 @@ public class Main {
                     break;
                 case "2":
                     listarOcorrenciasPorNome(scanner, client);
+                    break;
+                case "3":
+                    relatorioConservacaoPorNome(scanner, client);
                     break;
                 case "0":
                     running = false;
@@ -114,6 +121,7 @@ public class Main {
         System.out.println("=========================================");
         System.out.println("1. Consulta geral (buscar espécie por nome)");
         System.out.println("2. Listar ocorrências");
+        System.out.println("3. Gerar relatório de conservação");
         System.out.println("0. Sair");
         System.out.print("Escolha uma opção: ");
     }
@@ -188,6 +196,119 @@ public class Main {
 
             SearchResult selecionado = pagina.get(indice - 1);
             return client.fetchSpecies(selecionado.getKey());
+        }
+    }
+
+    // Variante de resolverEspecie que permite selecionar MAIS DE UM resultado
+    // por vez, digitando os números separados por vírgula (ex.: "1,3,5").
+    // Usada apenas pelo relatório de conservação — a consulta geral (opção 1)
+    // continua usando resolverEspecie, que seleciona uma única espécie.
+    //
+    // Guarda também o nome popular de cada seleção (vindo do próprio
+    // SearchResult da busca), já que Species não carrega essa informação —
+    // isso é devolvido junto no par (Species, nome popular).
+    private static List<EspecieSelecionada> resolverEspecies(Scanner scanner, SpeciesDataSource client) {
+        List<EspecieSelecionada> selecionadas = new ArrayList<>();
+
+        System.out.print("\nDigite o nome (comum ou científico) da espécie: ");
+        String termo = scanner.nextLine().trim();
+
+        if (termo.isEmpty()) {
+            System.out.println("Termo de busca não pode ser vazio.\n");
+            return selecionadas;
+        }
+
+        System.out.println("Buscando \"" + termo + "\" na base do GBIF...");
+
+        SearchSession session = client.searchByVernacular(termo, PAGINA);
+        if (!session.hasResults()) {
+            session = client.searchByScientific(termo, PAGINA);
+        }
+
+        if (!session.hasResults()) {
+            System.out.println("Nenhum resultado encontrado para \"" + termo + "\".\n");
+            return selecionadas;
+        }
+
+        while (true) {
+            List<SearchResult> pagina = session.currentPage();
+            exibirResultados(pagina, session.pageIndex() * PAGINA);
+            System.out.print("\nDigite o(s) número(s) do(s) resultado(s) separados por vírgula (ex.: 1,3,5), "
+                    + "[N] próxima página, [P] página anterior ou [0] concluir seleção: ");
+            String escolha = scanner.nextLine().trim();
+
+            if (escolha.equalsIgnoreCase("N")) {
+                if (!session.nextPage()) {
+                    System.out.println("Não há mais resultados.\n");
+                }
+                continue;
+            }
+
+            if (escolha.equalsIgnoreCase("P")) {
+                if (!session.previousPage()) {
+                    System.out.println("Você já está na primeira página.\n");
+                }
+                continue;
+            }
+
+            if (escolha.equals("0")) {
+                return selecionadas;
+            }
+
+            boolean algumaValida = false;
+            for (String parte : escolha.split(",")) {
+                String limpo = parte.trim();
+                if (limpo.isEmpty()) {
+                    continue;
+                }
+
+                int indice;
+                try {
+                    indice = Integer.parseInt(limpo);
+                } catch (NumberFormatException e) {
+                    System.out.println("Ignorado: \"" + limpo + "\" não é um número válido.");
+                    continue;
+                }
+
+                if (indice < 1 || indice > pagina.size()) {
+                    System.out.println("Ignorado: número " + indice + " fora do intervalo desta página.");
+                    continue;
+                }
+
+                SearchResult selecionado = pagina.get(indice - 1);
+                Species especie = client.fetchSpecies(selecionado.getKey());
+                if (especie == null) {
+                    System.out.println("Não foi possível carregar os detalhes de \""
+                            + selecionado.getScientificName() + "\".");
+                    continue;
+                }
+
+                String nomePopular = selecionado.getVernacularNames().isEmpty()
+                        ? null
+                        : selecionado.getVernacularNames().get(0);
+
+                selecionadas.add(new EspecieSelecionada(especie, nomePopular));
+                algumaValida = true;
+                System.out.println("\"" + especie.getScientificName() + "\" adicionada.");
+            }
+
+            if (algumaValida) {
+                return selecionadas;
+            }
+            System.out.println("Nenhuma seleção válida. Tente novamente.\n");
+        }
+    }
+
+    // Par simples (espécie + nome popular capturado no momento da busca).
+    // Existe só para o relatório de conservação não perder o nome popular ao
+    // converter SearchResult -> Species (Species não guarda essa informação).
+    private static class EspecieSelecionada {
+        final Species especie;
+        final String nomePopular;
+
+        EspecieSelecionada(Species especie, String nomePopular) {
+            this.especie = especie;
+            this.nomePopular = nomePopular;
         }
     }
 
@@ -268,6 +389,105 @@ public class Main {
         }
 
         exibirOcorrenciasPaginadas(todasOcorrencias, totalDescartados, "\"" + termo + "\"", scanner);
+    }
+
+    // Opção "3. Relatório de conservação por status": o usuário adiciona
+    // espécies uma a uma (reaproveitando resolverEspecie, a mesma busca com
+    // fallback popular->científico da consulta geral) até dizer que não quer
+    // mais adicionar. Só então o relatório é montado, agrupando por
+    // ConservationStatus via ConservationReport (RF6 [P] — nenhuma lógica
+    // específica de subtipo aqui ou lá).
+    private static void relatorioConservacaoPorNome(Scanner scanner, SpeciesDataSource client) {
+        List<Species> especies = new ArrayList<>();
+        Map<Species, String> nomesPopulares = new IdentityHashMap<>();
+
+        System.out.println("\n--- Gerar relatório de conservação ---");
+        System.out.println("Adicione as espécies que deseja incluir no relatório.");
+
+        while (true) {
+            List<EspecieSelecionada> novas = resolverEspecies(scanner, client);
+            for (EspecieSelecionada selecionada : novas) {
+                especies.add(selecionada.especie);
+                nomesPopulares.put(selecionada.especie, selecionada.nomePopular);
+            }
+
+            if (!novas.isEmpty()) {
+                System.out.println("\n" + especies.size() + " espécie(s) no relatório até agora.");
+            }
+
+            System.out.print("\nDeseja adicionar mais espécies ao relatório? (S/N): ");
+            String continuar = scanner.nextLine().trim();
+            if (!continuar.equalsIgnoreCase("S")) {
+                break;
+            }
+        }
+
+        if (especies.isEmpty()) {
+            System.out.println("\nNenhuma espécie adicionada. Relatório cancelado.\n");
+            return;
+        }
+
+        Map<ConservationStatus, List<Species>> grupos = ConservationReport.agruparPorStatus(especies);
+        exibirCategoriasDeRisco(grupos, nomesPopulares, scanner);
+    }
+
+    // Menu de navegação por categoria de risco: mostra só as classificações
+    // que de fato têm espécie associada (com a contagem de cada uma, e o
+    // nome traduzido para português via ConservationStatus.emPortugues()), e
+    // deixa o usuário escolher qual quer detalhar, até apertar [0] para
+    // voltar.
+    private static void exibirCategoriasDeRisco(Map<ConservationStatus, List<Species>> grupos,
+                                                  Map<Species, String> nomesPopulares, Scanner scanner) {
+        while (true) {
+            List<ConservationStatus> statusComEspecies = new ArrayList<>();
+            for (Map.Entry<ConservationStatus, List<Species>> entrada : grupos.entrySet()) {
+                if (!entrada.getValue().isEmpty()) {
+                    statusComEspecies.add(entrada.getKey());
+                }
+            }
+
+            System.out.println("\n--- Classificações de risco no relatório ---");
+            for (int i = 0; i < statusComEspecies.size(); i++) {
+                ConservationStatus status = statusComEspecies.get(i);
+                System.out.printf("%2d. %-25s (%d espécies)%n",
+                        i + 1, status.emPortugues(), grupos.get(status).size());
+            }
+            System.out.print("\nDigite o número da classificação para detalhar ou [0] voltar: ");
+            String escolha = scanner.nextLine().trim();
+
+            if (escolha.equals("0")) {
+                System.out.println();
+                return;
+            }
+
+            int indice;
+            try {
+                indice = Integer.parseInt(escolha);
+            } catch (NumberFormatException e) {
+                System.out.println("Opção inválida.\n");
+                continue;
+            }
+
+            if (indice < 1 || indice > statusComEspecies.size()) {
+                System.out.println("Opção inválida.\n");
+                continue;
+            }
+
+            ConservationStatus escolhido = statusComEspecies.get(indice - 1);
+            List<Species> grupo = grupos.get(escolhido);
+
+            System.out.println("\n--- " + escolhido.emPortugues() + " (" + grupo.size() + " espécies) ---");
+            for (Species especie : grupo) {
+                String nomePopular = nomesPopulares.get(especie);
+                String sufixoNomePopular = (nomePopular == null || nomePopular.isEmpty())
+                        ? ""
+                        : " (" + nomePopular + ")";
+
+                System.out.println("  - " + especie.getScientificName() + sufixoNomePopular
+                        + " [" + especie.getClass().getSimpleName() + "]");
+            }
+            System.out.println();
+        }
     }
 
     // Paginação/exibição compartilhada pelos dois fluxos acima.
