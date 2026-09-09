@@ -1,16 +1,16 @@
 package model;
 
 public class Reptile extends Species {
-    private String scaleType;
+    private String migrationRoute;
 
-    public Reptile(int id, String name, ConservationStatus status, String scaleType) {
-        super(id, name, status);
-        this.scaleType = scaleType;
+    public Reptile(int id, String name, ConservationStatus status, String migrationRoute, String habitat, String diet, String length, String mass) {
+        super(id, name, status, habitat, diet, length, mass);
+        this.migrationRoute = migrationRoute;
     }
 
     @Override
     public String describeHabitat() {
-        return "Réptil (" + getScientificName() + ") | Status: " + getStatus() + 
-               " | Tipo de escama (adaptação ao habitat): " + this.scaleType;
+        return "Ave (" + getScientificName() + ") | Status: " + getStatus() + 
+               " | Rota migratória: " + this.migrationRoute + describeCommonTraits();
     }
 }

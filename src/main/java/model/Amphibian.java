@@ -1,16 +1,16 @@
 package model;
 
 public class Amphibian extends Species {
-    private String waterBodyType;
+    private String migrationRoute;
 
-    public Amphibian(int id, String name, ConservationStatus status, String waterBodyType) {
-        super(id, name, status);
-        this.waterBodyType = waterBodyType;
+    public Amphibian(int id, String name, ConservationStatus status, String migrationRoute, String habitat, String diet, String length, String mass) {
+        super(id, name, status, habitat, diet, length, mass);
+        this.migrationRoute = migrationRoute;
     }
 
     @Override
     public String describeHabitat() {
-        return "Anfíbio (" + getScientificName() + ") | Status: " + getStatus() + 
-               " | Tipo de corpo de água preferencial: " + this.waterBodyType;
+        return "Ave (" + getScientificName() + ") | Status: " + getStatus() + 
+               " | Rota migratória: " + this.migrationRoute + describeCommonTraits();
     }
 }

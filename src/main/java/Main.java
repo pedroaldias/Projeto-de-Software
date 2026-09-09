@@ -1,4 +1,6 @@
 import api.GBIFApiClient;
+import api.EnrichedSpeciesDataSource;
+import api.WikiDataClient; 
 import api.ImportResult;
 import api.SearchSession;
 import api.SpeciesDataSource;
@@ -44,7 +46,7 @@ public class Main {
 
         Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
         // RF7 [IF]: Main só conhece a interface, nunca a implementação concreta.
-        SpeciesDataSource client = new GBIFApiClient();
+        SpeciesDataSource client = new EnrichedSpeciesDataSource(new GBIFApiClient(), new WikiDataClient());
         boolean running = true;
 
         while (running) {

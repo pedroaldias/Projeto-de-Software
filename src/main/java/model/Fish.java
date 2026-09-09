@@ -1,16 +1,16 @@
 package model;
 
 public class Fish extends Species {
-    private String waterSalinity;
+    private String migrationRoute;
 
-    public Fish(int id, String name, ConservationStatus status, String waterSalinity) {
-        super(id, name, status);
-        this.waterSalinity = waterSalinity;
+    public Fish(int id, String name, ConservationStatus status, String migrationRoute, String habitat, String diet, String length, String mass) {
+        super(id, name, status, habitat, diet, length, mass);
+        this.migrationRoute = migrationRoute;
     }
 
     @Override
     public String describeHabitat() {
-        return "Peixe (" + getScientificName() + ") | Status: " + getStatus() + 
-               " | Salinidade da água do habitat: " + this.waterSalinity;
+        return "Ave (" + getScientificName() + ") | Status: " + getStatus() + 
+               " | Rota migratória: " + this.migrationRoute + describeCommonTraits();
     }
 }
