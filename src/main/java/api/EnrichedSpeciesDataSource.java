@@ -37,21 +37,21 @@ public class EnrichedSpeciesDataSource implements SpeciesDataSource {
 
         return switch (base) {
             // Correspondência real: P2050 (wingspan) é o campo específico em si.
-            case Insect _ -> new Insect(id, name, status, valorOuPlaceholder(traits.wingspan()), habitat, diet, length, mass);
+            case Insect i -> new Insect(id, name, status, valorOuPlaceholder(traits.wingspan()), habitat, diet, length, mass);
 
             // Correspondência real: P9566 (diel cycle) é o campo específico em si.
-            case Mammal _ -> new Mammal(id, name, status, valorOuPlaceholder(traits.dielCycle()), habitat, diet, length, mass);
+            case Mammal m -> new Mammal(id, name, status, valorOuPlaceholder(traits.dielCycle()), habitat, diet, length, mass);
 
             // Sem trait estruturado equivalente pro campo específico — habitat
             // (P2974) entra como aproximação nesse campo; habitat/diet/length/mass
             // continuam sendo dados reais e comuns, independente dessa aproximação.
-            case Bird _ -> new Bird(id, name, status, habitat, habitat, diet, length, mass);
-            case Amphibian _ -> new Amphibian(id, name, status, habitat, habitat, diet, length, mass);
-            case Crustacean _ -> new Crustacean(id, name, status, habitat, habitat, diet, length, mass);
-            case Fish _ -> new Fish(id, name, status, habitat, habitat, diet, length, mass);
-            case Mollusk _ -> new Mollusk(id, name, status, habitat, habitat, diet, length, mass);
-            case Reptile _ -> new Reptile(id, name, status, habitat, habitat, diet, length, mass);
-            case Plant _ -> new Plant(id, name, status, habitat, "-", habitat, diet, length, mass);
+            case Bird b -> new Bird(id, name, status, habitat, habitat, diet, length, mass);
+            case Amphibian a -> new Amphibian(id, name, status, habitat, habitat, diet, length, mass);
+            case Crustacean c -> new Crustacean(id, name, status, habitat, habitat, diet, length, mass);
+            case Fish f -> new Fish(id, name, status, habitat, habitat, diet, length, mass);
+            case Mollusk mo -> new Mollusk(id, name, status, habitat, habitat, diet, length, mass);
+            case Reptile r -> new Reptile(id, name, status, habitat, habitat, diet, length, mass);
+            case Plant p -> new Plant(id, name, status, habitat, "-", habitat, diet, length, mass);
 
             // taxonomicClass não é trait ecológico — preservado como veio do GBIF.
             case GenericSpecies g -> new GenericSpecies(id, name, status, g.getTaxonomicClass(), habitat, diet, length, mass);
