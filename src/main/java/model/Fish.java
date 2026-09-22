@@ -10,7 +10,7 @@ public class Fish extends Species {
 
     @Override
     public String describeHabitat() {
-        return "Ave (" + getScientificName() + ") | Status: " + getStatus() + 
+        return "Peixe (" + getScientificName() + ") | Status: " + getStatus().emPortugues() + 
                " | Rota migratória: " + this.migrationRoute + describeCommonTraits();
     }
 }

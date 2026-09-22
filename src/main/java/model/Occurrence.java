@@ -7,6 +7,10 @@ public class Occurrence {
     private double latitude;
     private double longitude;
     private Species speciesRef;
+    // Nem todo eventDate do GBIF traz hora (muitos registros só têm precisão
+    // de dia). true por padrão; GBIFApiClient ajusta para false quando o
+    // eventDate bruto não trouxer componente de horário.
+    private boolean horarioConhecido = true;
 
     public Occurrence(Date date, double latitude, double longitude, Species speciesRef) {
         setDate(date);
@@ -37,8 +41,13 @@ public class Occurrence {
         this.longitude = lon;
     }
 
+    public void setHorarioConhecido(boolean horarioConhecido) {
+        this.horarioConhecido = horarioConhecido;
+    }
+
     public Date getDate() { return date; }
     public double getLatitude() { return latitude; }
     public double getLongitude() { return longitude; }
     public Species getSpeciesRef() { return speciesRef; }
+    public boolean isHorarioConhecido() { return horarioConhecido; }
 }

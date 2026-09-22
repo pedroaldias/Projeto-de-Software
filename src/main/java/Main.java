@@ -12,9 +12,11 @@ import model.Species;
 
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Scanner;
 
@@ -377,7 +379,7 @@ public class Main {
         int totalDescartados = 0;
 
         for (SearchResult correspondencia : correspondencias) {
-            Species especie = client.fetchSpecies(correspondencia.getKey());
+            Species especie = client.fetchSpeciesSemEnriquecimento(correspondencia.getKey());
             if (especie == null) {
                 continue;
             }
@@ -527,13 +529,27 @@ public class Main {
                 + descartados + " registros ignorados por dados inválidos.\n");
     }
 
+    // dd/MM/yyyy (+ HH:mm quando disponível) em vez do Date.toString() padrão
+    // (ex: "Mon Jan 05 18:37:43 GMT-03:00 2026"), que é ilegível para o
+    // usuário final.
+    private static final SimpleDateFormat FORMATO_DATA = new SimpleDateFormat("dd/MM/yyyy", new Locale("pt", "BR"));
+    private static final SimpleDateFormat FORMATO_DATA_OCORRENCIA = new SimpleDateFormat("dd/MM/yyyy HH:mm", new Locale("pt", "BR"));
+
     private static void exibirOcorrencias(List<Occurrence> ocorrencias, int offset) {
         int fim = Math.min(offset + PAGINA, ocorrencias.size());
         System.out.println("\n--- Ocorrências (" + (offset + 1) + " a " + fim + " de " + ocorrencias.size() + ") ---");
         for (int i = offset; i < fim; i++) {
             Occurrence o = ocorrencias.get(i);
-            System.out.printf("%2d. %-25s | %s @ (%.4f, %.4f)%n", i + 1,
-                    o.getSpeciesRef().getScientificName(), o.getDate(), o.getLatitude(), o.getLongitude());
+            String dataFormatada;
+            if (o.getDate() == null) {
+                dataFormatada = "Data desconhecida";
+            } else if (o.isHorarioConhecido()) {
+                dataFormatada = FORMATO_DATA_OCORRENCIA.format(o.getDate());
+            } else {
+                dataFormatada = FORMATO_DATA.format(o.getDate());
+            }
+            System.out.printf(Locale.forLanguageTag("pt-BR"), "%2d. %-25s | %-16s | Lat: %8.4f, Lon: %9.4f%n", i + 1,
+                    o.getSpeciesRef().getScientificName(), dataFormatada, o.getLatitude(), o.getLongitude());
         }
     }
 
@@ -545,7 +561,7 @@ public class Main {
         }
 
         System.out.println("\n--- Resultado ---");
-        System.out.println("ID (taxonKey): " + especie.getId());
+        // System.out.println("ID (taxonKey): " + especie.getId());
         System.out.println("Nome científico: " + especie.getScientificName());
         System.out.println("Categoria: " + especie.getClass().getSimpleName());
         System.out.println("Detalhes: " + especie.describeHabitat());

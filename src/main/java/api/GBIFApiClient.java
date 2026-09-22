@@ -78,6 +78,14 @@ public class GBIFApiClient implements SpeciesDataSource {
         }
     }
 
+    // GBIFApiClient sozinho não enriquece com fonte externa nenhuma — quem faz
+    // isso é o EnrichedSpeciesDataSource, que envolve este client. Aqui as duas
+    // buscas já são idênticas.
+    @Override
+    public Species fetchSpeciesSemEnriquecimento(int speciesId) {
+        return fetchSpecies(speciesId);
+    }
+
     private String fetchConservationStatus(int speciesId) {
         String url = "https://api.gbif.org/v1/species/" + speciesId + "/iucnRedListCategory";
 
@@ -336,6 +344,17 @@ public class GBIFApiClient implements SpeciesDataSource {
         return false;
     }
 
+    // O eventDate do GBIF às vezes vem só com data (ex.: "2026-01-01"),
+    // sem hora nenhuma — indica que a fonte original não registrou o
+    // horário, não que o evento ocorreu à meia-noite.
+    private boolean possuiHorario(String texto) {
+        if (texto == null || texto.isEmpty()) {
+            return false;
+        }
+        String primeira = texto.split("/")[0].trim();
+        return primeira.length() > 10;
+    }
+
     private Date parseData(String texto) {
         if (texto == null || texto.isEmpty()) {
             return null;
@@ -377,6 +396,7 @@ public class GBIFApiClient implements SpeciesDataSource {
                 Date data = (dataStr != null) ? parseData(dataStr) : null;
 
                 Occurrence occ = new Occurrence(data, lat, lon, especie);
+                occ.setHorarioConhecido(possuiHorario(dataStr));
                 resultado.ocorrencias.add(occ);
 
             } catch (IllegalArgumentException e) {
@@ -435,7 +455,11 @@ public class GBIFApiClient implements SpeciesDataSource {
     }
 
     private String extractJsonNumericField(String json, String fieldName) {
-        Pattern pattern = Pattern.compile("\"" + fieldName + "\":\\s*(\\d+)");
+        // Aceita inteiros, negativos e decimais (ex: -23.5505), já que
+        // decimalLatitude/decimalLongitude quase sempre têm sinal e casas
+        // decimais. O padrão antigo (\\d+) capturava só a parte inteira
+        // positiva, descartando o sinal e o restante do número.
+        Pattern pattern = Pattern.compile("\"" + fieldName + "\":\\s*(-?\\d+(?:\\.\\d+)?)");
         Matcher matcher = pattern.matcher(json);
         if (matcher.find()) {
             return matcher.group(1);

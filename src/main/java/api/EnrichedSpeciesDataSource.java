@@ -23,6 +23,15 @@ public class EnrichedSpeciesDataSource implements SpeciesDataSource {
         return enrich(base, traits);
     }
 
+    // Pula o enriquecimento do Wikidata (e as 2 consultas SPARQL que ele
+    // dispara por espécie) — usado por fluxos que só precisam de dados
+    // básicos do GBIF (ex.: nome científico), sem exibir os traits
+    // enriquecidos.
+    @Override
+    public Species fetchSpeciesSemEnriquecimento(int speciesId) {
+        return gbif.fetchSpecies(speciesId);
+    }
+
     // Species é imutável, então enriquecer = reconstruir a mesma subclasse
     // com os traits do Wikidata no lugar dos placeholders "-" do SpeciesFactory.
     private Species enrich(Species base, WikiDataTraits traits) {

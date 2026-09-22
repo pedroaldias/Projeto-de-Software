@@ -21,6 +21,16 @@ public interface SpeciesDataSource {
     Species fetchSpecies(int SpeciesId);
 
     /**
+     * Mesma ideia de fetchSpecies, mas sem qualquer enriquecimento externo
+     * (ex.: Wikidata). Usado por fluxos que só precisam de dados básicos
+     * (como o nome científico) e não exibem os traits enriquecidos —
+     * evita chamadas de rede desnecessárias e mais lentas. Implementações
+     * sem enriquecimento (ex.: GBIFApiClient puro) podem simplesmente
+     * delegar para fetchSpecies.
+     */
+    Species fetchSpeciesSemEnriquecimento(int speciesId);
+
+    /**
      * Inicia uma busca por nome popular. Busca apenas a primeira página
      * (tamanho pageSize) imediatamente; páginas seguintes só são buscadas na
      * API quando SearchSession.nextPage() for chamado.

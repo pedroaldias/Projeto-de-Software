@@ -10,7 +10,7 @@ public class Reptile extends Species {
 
     @Override
     public String describeHabitat() {
-        return "Ave (" + getScientificName() + ") | Status: " + getStatus() + 
+        return "Réptil (" + getScientificName() + ") | Status: " + getStatus().emPortugues() + 
                " | Rota migratória: " + this.migrationRoute + describeCommonTraits();
     }
 }

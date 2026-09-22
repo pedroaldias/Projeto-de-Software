@@ -12,7 +12,7 @@ public class Plant extends Species {
 
     @Override
     public String describeHabitat() {
-        return "Planta (" + getScientificName() + ") | Status: " + getStatus() + 
+        return "Planta (" + getScientificName() + ") | Status: " + getStatus().emPortugues() + 
                " | Bioma: " + this.biome + " | Época de floração: " + this.floweringSeason + describeCommonTraits();
     }
 }

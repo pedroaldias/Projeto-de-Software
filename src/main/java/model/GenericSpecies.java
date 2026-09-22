@@ -14,7 +14,7 @@ public class GenericSpecies extends Species {
 
     @Override
     public String describeHabitat() {
-        return "Espécie Genérica (" + getScientificName() + ") | Status: " + getStatus() + 
+        return "Espécie Genérica (" + getScientificName() + ") | Status: " + getStatus().emPortugues() + 
                " | Categoria taxonômica original: " + this.taxonomicClass + describeCommonTraits();
     }
 }

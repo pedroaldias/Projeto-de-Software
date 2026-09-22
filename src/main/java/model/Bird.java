@@ -10,7 +10,7 @@ public class Bird extends Species {
 
     @Override
     public String describeHabitat() {
-        return "Ave (" + getScientificName() + ") | Status: " + getStatus() + 
+        return "Ave (" + getScientificName() + ") | Status: " + getStatus().emPortugues() + 
                " | Rota migratória: " + this.migrationRoute + describeCommonTraits();
     }
 }

@@ -10,7 +10,7 @@ public class Mammal extends Species {
 
     @Override
     public String describeHabitat() {
-        return "Mamífero (" + getScientificName() + ") | Status: " + getStatus() + 
+        return "Mamífero (" + getScientificName() + ") | Status: " + getStatus().emPortugues() + 
                " | Ciclo de atividade: " + this.behaviorPattern + describeCommonTraits();
     }
 }
