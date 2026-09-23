@@ -37,17 +37,15 @@ classDiagram
         +getDiet() String
         +getLength() String
         +getMass() String
+        #appendCampo(sb: StringBuilder, rotulo: String, valor: String)$ void
         #describeCommonTraits() String
         +describeHabitat()* String
     }
 
     class Bird {
-        -migrationRoute : String
         +describeHabitat() String
     }
     class Plant {
-        -biome : String
-        -floweringSeason : String
         +describeHabitat() String
     }
     class Mammal {
@@ -55,11 +53,9 @@ classDiagram
         +describeHabitat() String
     }
     class Amphibian {
-        -migrationRoute : String
         +describeHabitat() String
     }
     class Reptile {
-        -migrationRoute : String
         +describeHabitat() String
     }
     class Insect {
@@ -67,15 +63,12 @@ classDiagram
         +describeHabitat() String
     }
     class Fish {
-        -migrationRoute : String
         +describeHabitat() String
     }
     class Mollusk {
-        -migrationRoute : String
         +describeHabitat() String
     }
     class Crustacean {
-        -migrationRoute : String
         +describeHabitat() String
     }
     class GenericSpecies {
@@ -89,12 +82,15 @@ classDiagram
         -latitude : double
         -longitude : double
         -speciesRef : Species
+        -horarioConhecido : boolean
         +setDate(d: Date) void
         +setCoordinates(lat: double, lon: double) void
+        +setHorarioConhecido(horarioConhecido: boolean) void
         +getDate() Date
         +getLatitude() double
         +getLongitude() double
         +getSpeciesRef() Species
+        +isHorarioConhecido() boolean
     }
 
     class SearchResult {
@@ -147,6 +143,7 @@ classDiagram
     class SpeciesDataSource {
         <<interface>>
         +fetchSpecies(speciesId: int) Species
+        +fetchSpeciesSemEnriquecimento(speciesId: int) Species
         +searchByVernacular(termo: String, pageSize: int) SearchSession
         +searchByScientific(termo: String, pageSize: int) SearchSession
         +fetchRawOccurrencesByScientificName(scientificName: String, limit: int) List~String~
@@ -167,6 +164,7 @@ classDiagram
         -LIMITE_NOMES_POPULARES : int$
         -client : HttpClient
         +fetchSpecies(speciesId: int) Species
+        +fetchSpeciesSemEnriquecimento(speciesId: int) Species
         +searchByVernacular(termo: String, pageSize: int) SearchSession
         +searchByScientific(termo: String, pageSize: int) SearchSession
         +fetchRawOccurrencesByScientificName(scientificName: String, limit: int) List~String~
@@ -177,6 +175,7 @@ classDiagram
         -gbif : SpeciesDataSource
         -wikidata : WikiDataClient
         +fetchSpecies(speciesId: int) Species
+        +fetchSpeciesSemEnriquecimento(speciesId: int) Species
         +searchByVernacular(termo: String, pageSize: int) SearchSession
         +searchByScientific(termo: String, pageSize: int) SearchSession
         +fetchRawOccurrencesByScientificName(scientificName: String, limit: int) List~String~
@@ -197,7 +196,6 @@ classDiagram
         length : String
         mass : String
         dielCycle : String
-        eolId : String
         +vazio()$ WikiDataTraits
     }
 
