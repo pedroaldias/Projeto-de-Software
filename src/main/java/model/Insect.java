@@ -10,7 +10,10 @@ public class Insect extends Species {
 
     @Override
     public String describeHabitat() {
-        return "Inseto (" + getScientificName() + ") | Status: " + getStatus().emPortugues() + 
-               " | Envergadura: " + this.wingType + describeCommonTraits();
+        StringBuilder sb = new StringBuilder();
+        sb.append("Inseto (").append(getScientificName()).append(") | Status: ").append(getStatus().emPortugues());
+        appendCampo(sb, "Envergadura", wingType);
+        sb.append(describeCommonTraits());
+        return sb.toString();
     }
 }

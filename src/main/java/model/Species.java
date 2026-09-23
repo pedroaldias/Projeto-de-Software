@@ -31,9 +31,32 @@ public abstract class Species {
     public String getLength() { return length; }
     public String getMass() { return mass; }
 
+    /**
+     * "-" é o marcador interno de "nenhuma das fontes (GBIF/Wikidata/IUCN)
+     * tinha esse dado" (ver EnrichedSpeciesDataSource). Ele nunca é
+     * exibido ao usuário final: em vez de uma ficha com campos "quebrados"
+     * tipo "Dieta: -", a camada de apresentação simplesmente omite o
+     * atributo ausente, mostrando uma ficha mais enxuta mas honesta — sem
+     * inventar nem aproximar dado que não existe.
+     *
+     * static e protected para poder ser reaproveitado por qualquer
+     * subclasse ao montar seus próprios campos específicos (rota
+     * migratória, ciclo de atividade, envergadura, bioma, etc.), sem
+     * duplicar essa checagem em cada uma.
+     */
+    protected static void appendCampo(StringBuilder sb, String rotulo, String valor) {
+        if (valor != null && !valor.equals("-")) {
+            sb.append(" | ").append(rotulo).append(": ").append(valor);
+        }
+    }
+
     protected String describeCommonTraits() {
-        return " | Habitat: " + habitat + " | Hábitos alimentares: " + diet + 
-               " | Comprimento: " + length + " | Massa: " + mass;
+        StringBuilder sb = new StringBuilder();
+        appendCampo(sb, "Habitat", habitat);
+        appendCampo(sb, "Hábitos alimentares", diet);
+        appendCampo(sb, "Comprimento", length);
+        appendCampo(sb, "Massa", mass);
+        return sb.toString();
     }
 
     public abstract String describeHabitat();

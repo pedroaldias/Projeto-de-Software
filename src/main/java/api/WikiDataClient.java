@@ -27,7 +27,7 @@ public class WikiDataClient {
 
         String query = """
             SELECT ?habitatLabel ?dietLabel ?wingspan ?lengthAmount ?lengthUnitLabel
-                   ?massAmount ?massUnitLabel ?dielCycleLabel ?eolId WHERE {
+                   ?massAmount ?massUnitLabel ?dielCycleLabel WHERE {
               wd:%s wdt:P225 ?ignore .
               OPTIONAL { wd:%s wdt:P2974 ?habitat . }
               OPTIONAL { wd:%s wdt:P1034 ?diet . }
@@ -45,10 +45,9 @@ public class WikiDataClient {
                 ?massNode wikibase:quantityUnit ?massUnit .
               }
               OPTIONAL { wd:%s wdt:P9566 ?dielCycle . }
-              OPTIONAL { wd:%s wdt:P830 ?eolId . }
               SERVICE wikibase:label { bd:serviceParam wikibase:language "pt,en". }
             }
-            """.formatted(qid, qid, qid, qid, qid, qid, qid, qid);
+            """.formatted(qid, qid, qid, qid, qid, qid, qid);
 
         String json = executeSparql(query);
         if (json == null) {
@@ -59,7 +58,6 @@ public class WikiDataClient {
         String diet = extractSparqlValue(json, "dietLabel");
         String wingspan = extractSparqlValue(json, "wingspan");
         String dielCycle = extractSparqlValue(json, "dielCycleLabel");
-        String eolId = extractSparqlValue(json, "eolId");
 
         String length = formatQuantity(
                 extractSparqlValue(json, "lengthAmount"),
@@ -68,7 +66,7 @@ public class WikiDataClient {
                 extractSparqlValue(json, "massAmount"),
                 extractSparqlValue(json, "massUnitLabel"));
 
-        return new WikiDataTraits(habitat, diet, wingspan, length, mass, dielCycle, eolId);
+        return new WikiDataTraits(habitat, diet, wingspan, length, mass, dielCycle);
     }
 
     // Wikidata devolve quantidades com sinal explícito (ex.: "+1.2"). Junta

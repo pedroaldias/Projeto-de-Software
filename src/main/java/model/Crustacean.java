@@ -1,16 +1,13 @@
 package model;
 
 public class Crustacean extends Species {
-    private String migrationRoute;
 
-    public Crustacean(int id, String name, ConservationStatus status, String migrationRoute, String habitat, String diet, String length, String mass) {
+    public Crustacean(int id, String name, ConservationStatus status, String habitat, String diet, String length, String mass) {
         super(id, name, status, habitat, diet, length, mass);
-        this.migrationRoute = migrationRoute;
     }
 
     @Override
     public String describeHabitat() {
-        return "Crustáceo (" + getScientificName() + ") | Status: " + getStatus().emPortugues() + 
-               " | Rota migratória: " + this.migrationRoute + describeCommonTraits();
+        return "Crustáceo (" + getScientificName() + ") | Status: " + getStatus().emPortugues() + describeCommonTraits();
     }
 }
